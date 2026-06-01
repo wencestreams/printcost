@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef, useCallback } from "react";
+const { useState, useEffect, useRef, useCallback } = React;
 
 // ─── Firebase ──────────────────────────────────────────────────────────────────
 const FIREBASE_CONFIG = {
@@ -297,7 +297,7 @@ ${czech?`<div class="notice">${L.notice}</div>`:""}
 };
 
 // ─── App ───────────────────────────────────────────────────────────────────────
-export default function App() {
+  function App() {
   const [tab, setTab] = useState("Orders");
   const [filaments, setFilaments] = useState(null);
   const [models, setModels] = useState(null);
