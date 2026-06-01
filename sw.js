@@ -1,9 +1,11 @@
-const CACHE = "printcost-v0.93";
+const CACHE = "printcost-v1.0";
 const ASSETS = [
   "/printcost/",
   "/printcost/index.html",
   "/printcost/app.jsx",
   "/printcost/manifest.json",
+  "/printcost/icon-192.png",
+  "/printcost/icon-512.png",
   "https://cdnjs.cloudflare.com/ajax/libs/react/18.2.0/umd/react.production.min.js",
   "https://cdnjs.cloudflare.com/ajax/libs/react-dom/18.2.0/umd/react-dom.production.min.js",
   "https://cdnjs.cloudflare.com/ajax/libs/babel-standalone/7.23.2/babel.min.js",
