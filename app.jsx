@@ -18,9 +18,7 @@ const fsGet = async (syncKey) => {
     const doc = await res.json();
     const fields = doc.fields || {};
     const out = {};
-    for (const [k, v] of Object.entries(fields)) {
-      out[k] = JSON.parse(v.stringValue);
-    }
+    for (const [k, v] of Object.entries(fields)) out[k] = JSON.parse(v.stringValue);
     return out;
   } catch { return null; }
 };
@@ -28,9 +26,7 @@ const fsGet = async (syncKey) => {
 const fsSet = async (syncKey, data) => {
   try {
     const fields = {};
-    for (const [k, v] of Object.entries(data)) {
-      fields[k] = { stringValue: JSON.stringify(v) };
-    }
+    for (const [k, v] of Object.entries(data)) fields[k] = { stringValue: JSON.stringify(v) };
     await fetch(`${FIRESTORE_URL}/${syncKey}?key=${FIREBASE_CONFIG.apiKey}`, {
       method: "PATCH",
       headers: { "Content-Type": "application/json" },
@@ -41,9 +37,9 @@ const fsSet = async (syncKey, data) => {
 
 const genKey = () => Array.from(crypto.getRandomValues(new Uint8Array(16))).map(b => b.toString(16).padStart(2,"0")).join("");
 
-// ─── Local Storage ─────────────────────────────────────────────────────────────
-const sLoad = async (key, fb) => { try { const r = await window.storage.get(key); return r ? JSON.parse(r.value) : fb; } catch { return fb; } };
-const sSave = async (key, val) => { try { await window.storage.set(key, JSON.stringify(val)); } catch {} };
+// ─── localStorage helpers ──────────────────────────────────────────────────────
+const lsGet = (key, fb) => { try { const v = localStorage.getItem(key); return v ? JSON.parse(v) : fb; } catch { return fb; } };
+const lsSet = (key, val) => { try { localStorage.setItem(key, JSON.stringify(val)); } catch {} };
 
 // ─── Helpers ───────────────────────────────────────────────────────────────────
 const uid = () => Math.random().toString(36).slice(2, 9);
@@ -54,14 +50,10 @@ const DEFAULT_SETTINGS = {
   cppm: 1, electricityPerMinute: 0.05, brandName: "", friendMode: false,
   lowStockGrams: 100, accentColor: "#7c3aed",
   invoiceMode: "simple", czechInvoice: false,
-  // Supplier info
   supplierName: "", supplierAddress: "", supplierCity: "", supplierZip: "", supplierCountry: "Česká republika",
   supplierICO: "", supplierEmail: "", supplierPhone: "",
-  // Banking
   bankAccount: "", bankIBAN: "", bankBIC: "",
-  // Invoice defaults
-  paymentDueDays: 14,
-  invoiceCounter: 1,
+  paymentDueDays: 14, invoiceCounter: 1,
 };
 
 const calcOrderTotal = (order, filaments, extras, settings) => {
@@ -78,12 +70,8 @@ const calcOrderTotal = (order, filaments, extras, settings) => {
     t += (parseFloat(order.electricityMinutes)||0) * (parseFloat(settings.electricityPerMinute)||0);
   }
   (order.extraLines||[]).forEach(el => {
-    if (el.extraId) {
-      const ex = extras.find(x => x.id === el.extraId);
-      if (ex) t += (parseFloat(el.qty)||1) * (parseFloat(ex.unitPrice)||0);
-    } else if (el.customName) {
-      t += (parseFloat(el.qty)||1) * (parseFloat(el.unitPrice)||0);
-    }
+    if (el.extraId) { const ex = extras.find(x => x.id === el.extraId); if (ex) t += (parseFloat(el.qty)||1) * (parseFloat(ex.unitPrice)||0); }
+    else if (el.customName) t += (parseFloat(el.qty)||1) * (parseFloat(el.unitPrice)||0);
   });
   return t;
 };
@@ -102,11 +90,9 @@ const importData = (file, cb) => {
   r.readAsText(file);
 };
 
-// ─── Czech number format ───────────────────────────────────────────────────────
 const fmtCZK = (val, czech) =>
-  czech
-    ? val.toFixed(2).replace(".", ",").replace(/\B(?=(\d{3})+(?!\d))/g, "\u00a0") + "\u00a0Kč"
-    : val.toFixed(2) + " CZK";
+  czech ? val.toFixed(2).replace(".", ",").replace(/\B(?=(\d{3})+(?!\d))/g, "\u00a0") + "\u00a0Kč"
+        : val.toFixed(2) + " CZK";
 
 // ─── Invoice ───────────────────────────────────────────────────────────────────
 const exportInvoice = (order, filaments, extras, settings, invoiceNumber) => {
@@ -117,89 +103,61 @@ const exportInvoice = (order, filaments, extras, settings, invoiceNumber) => {
   const today = new Date();
   const fmt = d => d.toLocaleDateString(czech ? "cs-CZ" : "en-GB");
   const dueDate = new Date(today); dueDate.setDate(dueDate.getDate() + (parseInt(settings.paymentDueDays)||14));
-
-  // Labels
   const L = czech ? {
-    invoice: "FAKTURA", invoiceNum: "Číslo faktury", date: "Datum vystavení",
-    due: "Datum splatnosti", vs: "Variabilní symbol", supplier: "Dodavatel",
-    client: "Odběratel", ico: "IČO", email: "E-mail", phone: "Tel.",
-    bank: "Bankovní spojení", iban: "IBAN", bic: "BIC/SWIFT",
-    order: "Objednávka", models: "Modely", model: "Model", qty: "Ks",
-    filaments: "Spotřeba materiálu", material: "Materiál", color: "Barva",
-    weight: "Hmotnost", price: "Cena", otherCosts: "Ostatní náklady",
-    item: "Položka", services: "Služby a příplatky", service: "Služba",
-    subtotal: "Mezisoučet", total: "Celkem k úhradě",
-    notice: "Nejsem plátce DPH.", footer: "Vystaveno pomocí PrintCost",
-    printTime: (m) => `Čas tisku (${m} min)`, elec: (m) => `Elektřina (${m} min)`,
+    invoice:"FAKTURA",invoiceNum:"Číslo faktury",date:"Datum vystavení",due:"Datum splatnosti",
+    vs:"Variabilní symbol",supplier:"Dodavatel",client:"Odběratel",ico:"IČO",email:"E-mail",phone:"Tel.",
+    bank:"Bankovní spojení",iban:"IBAN",bic:"BIC/SWIFT",order:"Objednávka",models:"Modely",model:"Model",qty:"Ks",
+    filaments:"Spotřeba materiálu",material:"Materiál",color:"Barva",weight:"Hmotnost",price:"Cena",
+    otherCosts:"Ostatní náklady",item:"Položka",services:"Služby a příplatky",service:"Služba",
+    subtotal:"Mezisoučet",total:"Celkem k úhradě",notice:"Nejsem plátce DPH.",footer:"Vystaveno pomocí PrintCost",
+    printTime:(m)=>`Čas tisku (${m} min)`,elec:(m)=>`Elektřina (${m} min)`,
   } : {
-    invoice: "INVOICE", invoiceNum: "Invoice No.", date: "Date",
-    due: "Due Date", vs: "Variable Symbol", supplier: "Supplier",
-    client: "Client", ico: "Business ID", email: "E-mail", phone: "Phone",
-    bank: "Bank Account", iban: "IBAN", bic: "BIC/SWIFT",
-    order: "Order", models: "Models", model: "Model", qty: "Qty",
-    filaments: "Filament Costs", material: "Material", color: "Color",
-    weight: "Weight", price: "Cost", otherCosts: "Other Costs",
-    item: "Item", services: "Additional Services", service: "Service",
-    subtotal: "Subtotal", total: "Total Due",
-    notice: "Not a VAT payer.", footer: "Generated by PrintCost",
-    printTime: (m) => `Print time (${m} min)`, elec: (m) => `Electricity (${m} min)`,
+    invoice:"INVOICE",invoiceNum:"Invoice No.",date:"Date",due:"Due Date",vs:"Variable Symbol",
+    supplier:"Supplier",client:"Client",ico:"Business ID",email:"E-mail",phone:"Phone",
+    bank:"Bank Account",iban:"IBAN",bic:"BIC/SWIFT",order:"Order",models:"Models",model:"Model",qty:"Qty",
+    filaments:"Filament Costs",material:"Material",color:"Color",weight:"Weight",price:"Cost",
+    otherCosts:"Other Costs",item:"Item",services:"Additional Services",service:"Service",
+    subtotal:"Subtotal",total:"Total Due",notice:"Not a VAT payer.",footer:"Generated by PrintCost",
+    printTime:(m)=>`Print time (${m} min)`,elec:(m)=>`Electricity (${m} min)`,
   };
-
   const f = v => fmtCZK(v, czech);
-
-  let filRows = "", filTotal = 0;
+  let filRows="",filTotal=0;
   (order.items||[]).forEach(item => {
-    const mult = 1 + (parseFloat(item.filamentMarkup)||0) / 100;
+    const mult=1+(parseFloat(item.filamentMarkup)||0)/100;
     (item.filamentUses||[]).forEach(fu => {
-      const fil = filaments.find(x => x.id === fu.filamentId); if (!fil) return;
-      const base = (parseFloat(fu.grams)||0) / 1000 * fil.pricePerKg;
-      const cost = base * mult; filTotal += cost;
-      const markupNote = mult !== 1 ? ` <span style="color:#888;font-size:11px">(+${item.filamentMarkup}%)</span>` : "";
-      filRows += `<tr><td>${fil.brand} ${fil.type}${markupNote}</td><td>${fil.color}</td><td>${fu.grams}g</td><td class="r">${f(cost)}</td></tr>`;
+      const fil=filaments.find(x=>x.id===fu.filamentId); if(!fil)return;
+      const base=(parseFloat(fu.grams)||0)/1000*fil.pricePerKg;
+      const cost=base*mult; filTotal+=cost;
+      const mn=mult!==1?` <span style="color:#888;font-size:11px">(+${item.filamentMarkup}%)</span>`:"";
+      filRows+=`<tr><td>${fil.brand} ${fil.type}${mn}</td><td>${fil.color}</td><td>${fu.grams}g</td><td class="r">${f(cost)}</td></tr>`;
     });
   });
-
-  let otherRows = "", otherTotal = 0;
-  if (!fm) {
-    const pt = (parseFloat(order.printMinutes)||0) * (parseFloat(settings.cppm)||0);
-    const el = (parseFloat(order.electricityMinutes)||0) * (parseFloat(settings.electricityPerMinute)||0);
-    if (pt > 0) { otherRows += `<tr><td colspan="3">${L.printTime(order.printMinutes)}</td><td class="r">${f(pt)}</td></tr>`; otherTotal += pt; }
-    if (el > 0) { otherRows += `<tr><td colspan="3">${L.elec(order.electricityMinutes)}</td><td class="r">${f(el)}</td></tr>`; otherTotal += el; }
+  let otherRows="",otherTotal=0;
+  if(!fm){
+    const pt=(parseFloat(order.printMinutes)||0)*(parseFloat(settings.cppm)||0);
+    const el=(parseFloat(order.electricityMinutes)||0)*(parseFloat(settings.electricityPerMinute)||0);
+    if(pt>0){otherRows+=`<tr><td colspan="3">${L.printTime(order.printMinutes)}</td><td class="r">${f(pt)}</td></tr>`;otherTotal+=pt;}
+    if(el>0){otherRows+=`<tr><td colspan="3">${L.elec(order.electricityMinutes)}</td><td class="r">${f(el)}</td></tr>`;otherTotal+=el;}
   }
-
-  let extraRows = "", extraTotal = 0;
-  (order.extraLines||[]).forEach(el => {
-    if (el.extraId) {
-      const ex = extras.find(x => x.id === el.extraId); if (!ex) return;
-      const cost = (parseFloat(el.qty)||1) * (parseFloat(ex.unitPrice)||0); extraTotal += cost;
-      extraRows += `<tr><td>${ex.name}</td><td class="r">${el.qty||1}</td><td class="r">${f(parseFloat(ex.unitPrice)||0)}</td><td class="r">${f(cost)}</td></tr>`;
-    } else if (el.customName) {
-      const cost = (parseFloat(el.qty)||1) * (parseFloat(el.unitPrice)||0); extraTotal += cost;
-      extraRows += `<tr><td>${el.customName}</td><td class="r">${el.qty||1}</td><td class="r">${f(parseFloat(el.unitPrice)||0)}</td><td class="r">${f(cost)}</td></tr>`;
-    }
+  let extraRows="",extraTotal=0;
+  (order.extraLines||[]).forEach(el=>{
+    if(el.extraId){const ex=extras.find(x=>x.id===el.extraId);if(!ex)return;const cost=(parseFloat(el.qty)||1)*(parseFloat(ex.unitPrice)||0);extraTotal+=cost;extraRows+=`<tr><td>${ex.name}</td><td class="r">${el.qty||1}</td><td class="r">${f(parseFloat(ex.unitPrice)||0)}</td><td class="r">${f(cost)}</td></tr>`;}
+    else if(el.customName){const cost=(parseFloat(el.qty)||1)*(parseFloat(el.unitPrice)||0);extraTotal+=cost;extraRows+=`<tr><td>${el.customName}</td><td class="r">${el.qty||1}</td><td class="r">${f(parseFloat(el.unitPrice)||0)}</td><td class="r">${f(cost)}</td></tr>`;}
   });
-
-  const total = filTotal + otherTotal + extraTotal;
-  const invNum = invoiceNumber || String(settings.invoiceCounter||1).padStart(6,"0");
-
-  const advancedHeader = advanced ? `
+  const total=filTotal+otherTotal+extraTotal;
+  const invNum=invoiceNumber||String(settings.invoiceCounter||1).padStart(6,"0");
+  const advancedHeader=advanced?`
     <div class="two-col" style="margin-bottom:24px;gap:32px">
-      <div class="info-box">
-        <div class="box-title">${L.supplier}</div>
+      <div class="info-box"><div class="box-title">${L.supplier}</div>
         <strong>${settings.supplierName||settings.brandName||""}</strong><br>
-        ${settings.supplierAddress||""}<br>
-        ${settings.supplierZip||""} ${settings.supplierCity||""}<br>
-        ${settings.supplierCountry||""}<br>
+        ${settings.supplierAddress||""}<br>${settings.supplierZip||""} ${settings.supplierCity||""}<br>${settings.supplierCountry||""}
         ${settings.supplierICO?`<br>${L.ico}: <strong>${settings.supplierICO}</strong>`:""}
         ${settings.supplierEmail?`<br>${L.email}: ${settings.supplierEmail}`:""}
         ${settings.supplierPhone?`<br>${L.phone}: ${settings.supplierPhone}`:""}
       </div>
-      <div class="info-box">
-        <div class="box-title">${L.client}</div>
-        <strong>${order.clientName||""}</strong><br>
-        ${order.clientAddress||""}<br>
-        ${order.clientZip||""} ${order.clientCity||""}<br>
-        ${order.clientCountry||""}<br>
+      <div class="info-box"><div class="box-title">${L.client}</div>
+        <strong>${order.clientName||""}</strong><br>${order.clientAddress||""}<br>
+        ${order.clientZip||""} ${order.clientCity||""}<br>${order.clientCountry||""}
         ${order.clientEmail?`<br>${L.email}: ${order.clientEmail}`:""}
       </div>
     </div>
@@ -209,95 +167,60 @@ const exportInvoice = (order, filaments, extras, settings, invoiceNumber) => {
       <div><span class="meta-label">${L.due}</span><strong>${fmt(dueDate)}</strong></div>
       ${settings.bankAccount?`<div><span class="meta-label">${L.vs}</span>${invNum}</div>`:""}
     </div>
-    ${settings.bankAccount?`
-    <div class="info-box" style="margin-bottom:24px;background:#f0faf4;border:1px solid #86efac44;border-radius:8px;padding:12px 16px">
+    ${settings.bankAccount?`<div class="info-box" style="margin-bottom:24px;background:#f0faf4;border:1px solid #86efac44;border-radius:8px;padding:12px 16px">
       <div class="box-title" style="color:#166534">${L.bank}</div>
       ${settings.bankAccount?`<div>${L.bank}: <strong>${settings.bankAccount}</strong></div>`:""}
       ${settings.bankIBAN?`<div>${L.iban}: <strong>${settings.bankIBAN}</strong></div>`:""}
       ${settings.bankBIC?`<div>${L.bic}: ${settings.bankBIC}</div>`:""}
       <div>${L.vs}: <strong>${invNum}</strong></div>
-    </div>`:""}
-  ` : "";
-
-  const simpleHeader = !advanced ? `
-    <div style="margin-bottom:16px">
-      <div style="font-size:12px;color:#666">${L.date}: ${fmt(today)}</div>
-    </div>
-  ` : "";
-
-  const html = `<!DOCTYPE html><html lang="${czech?"cs":"en"}"><head><meta charset="utf-8">
+    </div>`:""}`:""
+  ;
+  const html=`<!DOCTYPE html><html lang="${czech?"cs":"en"}"><head><meta charset="utf-8">
 <title>${L.invoice} – ${order.name||"Order"}</title>
-<style>
-  *{box-sizing:border-box}
-  body{font-family:Arial,sans-serif;max-width:820px;margin:40px auto;color:#222;font-size:13px;padding:0 24px;line-height:1.5}
-  h2{font-size:13px;border-bottom:2px solid ${accent};padding-bottom:4px;margin:24px 0 8px;color:${accent};text-transform:uppercase;letter-spacing:.04em}
-  table{width:100%;border-collapse:collapse;margin-bottom:8px}
-  th{background:#f4f4f4;text-align:left;padding:7px 10px;border:1px solid #ddd;font-size:12px}
-  td{padding:7px 10px;border:1px solid #ddd;font-size:12px}
-  .r{text-align:right}
-  .header{display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:24px;padding-bottom:16px;border-bottom:3px solid ${accent}}
-  .brand{font-size:22px;font-weight:bold;color:${accent}}
-  .two-col{display:grid;grid-template-columns:1fr 1fr;gap:16px}
-  .info-box{font-size:12px;line-height:1.8}
-  .box-title{font-size:11px;font-weight:bold;color:#888;text-transform:uppercase;letter-spacing:.06em;margin-bottom:4px}
-  .meta-label{display:block;font-size:10px;color:#888;text-transform:uppercase;letter-spacing:.05em;margin-bottom:1px}
-  .total-box{background:#f9f6ff;border:1px solid ${accent}33;border-radius:8px;padding:14px 18px;margin-top:20px}
-  .total-line{display:flex;justify-content:space-between;font-size:12px;color:#555;margin-bottom:5px}
-  .grand{display:flex;justify-content:space-between;font-size:18px;font-weight:bold;color:${accent};margin-top:10px;padding-top:10px;border-top:2px solid ${accent}44}
-  .notice{font-size:11px;color:#888;margin-top:20px;padding:8px 12px;background:#f5f5f5;border-radius:6px;border-left:3px solid ${accent}}
-  .footer{margin-top:40px;font-size:10px;color:#bbb;text-align:center;border-top:1px solid #eee;padding-top:12px}
-  @media print{body{margin:0}}
-</style></head><body>
-<div class="header">
-  <div>
-    <div class="brand">${settings.brandName||settings.supplierName||"3D Print Studio"}</div>
-    ${!advanced&&settings.supplierICO?`<div style="font-size:11px;color:#888;margin-top:2px">${L.ico}: ${settings.supplierICO}</div>`:""}
-  </div>
-  <div style="text-align:right">
-    <div style="font-size:24px;font-weight:bold;color:${accent}">${L.invoice}</div>
-    ${advanced?`<div style="font-size:12px;color:#888;margin-top:2px">${invNum}</div>`:`<div style="font-size:12px;color:#888;margin-top:2px">${fmt(today)}</div>`}
-  </div>
-</div>
-
-${advanced ? advancedHeader : simpleHeader}
-
+<style>*{box-sizing:border-box}body{font-family:Arial,sans-serif;max-width:820px;margin:40px auto;color:#222;font-size:13px;padding:0 24px;line-height:1.5}
+h2{font-size:13px;border-bottom:2px solid ${accent};padding-bottom:4px;margin:24px 0 8px;color:${accent};text-transform:uppercase;letter-spacing:.04em}
+table{width:100%;border-collapse:collapse;margin-bottom:8px}th{background:#f4f4f4;text-align:left;padding:7px 10px;border:1px solid #ddd;font-size:12px}
+td{padding:7px 10px;border:1px solid #ddd;font-size:12px}.r{text-align:right}
+.header{display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:24px;padding-bottom:16px;border-bottom:3px solid ${accent}}
+.brand{font-size:22px;font-weight:bold;color:${accent}}.two-col{display:grid;grid-template-columns:1fr 1fr;gap:16px}
+.info-box{font-size:12px;line-height:1.8}.box-title{font-size:11px;font-weight:bold;color:#888;text-transform:uppercase;letter-spacing:.06em;margin-bottom:4px}
+.meta-label{display:block;font-size:10px;color:#888;text-transform:uppercase;letter-spacing:.05em;margin-bottom:1px}
+.total-box{background:#f9f6ff;border:1px solid ${accent}33;border-radius:8px;padding:14px 18px;margin-top:20px}
+.total-line{display:flex;justify-content:space-between;font-size:12px;color:#555;margin-bottom:5px}
+.grand{display:flex;justify-content:space-between;font-size:18px;font-weight:bold;color:${accent};margin-top:10px;padding-top:10px;border-top:2px solid ${accent}44}
+.notice{font-size:11px;color:#888;margin-top:20px;padding:8px 12px;background:#f5f5f5;border-radius:6px;border-left:3px solid ${accent}}
+.footer{margin-top:40px;font-size:10px;color:#bbb;text-align:center;border-top:1px solid #eee;padding-top:12px}
+@media print{body{margin:0}}</style></head><body>
+<div class="header"><div><div class="brand">${settings.brandName||settings.supplierName||"3D Print Studio"}</div>
+${!advanced&&settings.supplierICO?`<div style="font-size:11px;color:#888;margin-top:2px">${L.ico}: ${settings.supplierICO}</div>`:""}</div>
+<div style="text-align:right"><div style="font-size:24px;font-weight:bold;color:${accent}">${L.invoice}</div>
+${advanced?`<div style="font-size:12px;color:#888;margin-top:2px">${invNum}</div>`:`<div style="font-size:12px;color:#888;margin-top:2px">${fmt(today)}</div>`}</div></div>
+${advanced?advancedHeader:`<div style="margin-bottom:16px"><div style="font-size:12px;color:#666">${L.date}: ${fmt(today)}</div></div>`}
 <h2>${L.order}: ${order.name||"Untitled"}</h2>
 ${order.description?`<p style="color:#555;font-size:12px;margin:0 0 12px">${order.description}</p>`:""}
-
-<h2>${L.models}</h2>
-<table><tr><th>${L.model}</th><th>${L.qty}</th></tr>
-${(order.items||[]).map(i=>`<tr><td>${i.modelName||"Custom"}</td><td>${i.qty||1}</td></tr>`).join("")}
-</table>
-
-<h2>${L.filaments}</h2>
-<table><tr><th>${L.material}</th><th>${L.color}</th><th>${L.weight}</th><th class="r">${L.price}</th></tr>
-${filRows||`<tr><td colspan="4" style="color:#aaa">—</td></tr>`}
-</table>
-
+<h2>${L.models}</h2><table><tr><th>${L.model}</th><th>${L.qty}</th></tr>
+${(order.items||[]).map(i=>`<tr><td>${i.modelName||"Custom"}</td><td>${i.qty||1}</td></tr>`).join("")}</table>
+<h2>${L.filaments}</h2><table><tr><th>${L.material}</th><th>${L.color}</th><th>${L.weight}</th><th class="r">${L.price}</th></tr>
+${filRows||`<tr><td colspan="4" style="color:#aaa">—</td></tr>`}</table>
 ${otherRows?`<h2>${L.otherCosts}</h2><table><tr><th colspan="3">${L.item}</th><th class="r">${L.price}</th></tr>${otherRows}</table>`:""}
 ${extraRows?`<h2>${L.services}</h2><table><tr><th>${L.service}</th><th class="r">${L.qty}</th><th class="r">${L.price}</th><th class="r">${L.price}</th></tr>${extraRows}</table>`:""}
-
 <div class="total-box">
-  <div class="total-line"><span>${L.filaments}</span><span>${f(filTotal)}</span></div>
-  ${otherTotal>0?`<div class="total-line"><span>${L.otherCosts}</span><span>${f(otherTotal)}</span></div>`:""}
-  ${extraTotal>0?`<div class="total-line"><span>${L.services}</span><span>${f(extraTotal)}</span></div>`:""}
-  <div class="grand"><span>${L.total}</span><span>${f(total)}</span></div>
-</div>
-
+<div class="total-line"><span>${L.filaments}</span><span>${f(filTotal)}</span></div>
+${otherTotal>0?`<div class="total-line"><span>${L.otherCosts}</span><span>${f(otherTotal)}</span></div>`:""}
+${extraTotal>0?`<div class="total-line"><span>${L.services}</span><span>${f(extraTotal)}</span></div>`:""}
+<div class="grand"><span>${L.total}</span><span>${f(total)}</span></div></div>
 ${czech?`<div class="notice">${L.notice}</div>`:""}
-<div class="footer">${L.footer}</div>
-</body></html>`;
-
-  const blob = new Blob([html], { type: "text/html;charset=utf-8" });
-  const url = URL.createObjectURL(blob);
-  const a = document.createElement("a"); a.href = url;
-  a.download = `faktura-${invNum}-${(order.name||"order").replace(/\s+/g,"-")}.html`;
-  document.body.appendChild(a); a.click(); document.body.removeChild(a);
-  setTimeout(() => URL.revokeObjectURL(url), 1000);
+<div class="footer">${L.footer}</div></body></html>`;
+  const blob=new Blob([html],{type:"text/html;charset=utf-8"});
+  const url=URL.createObjectURL(blob);
+  const a=document.createElement("a");a.href=url;
+  a.download=`faktura-${invNum}-${(order.name||"order").replace(/\s+/g,"-")}.html`;
+  document.body.appendChild(a);a.click();document.body.removeChild(a);
+  setTimeout(()=>URL.revokeObjectURL(url),1000);
 };
 
 // ─── App ───────────────────────────────────────────────────────────────────────
-  function App() {
+function App() {
   const [tab, setTab] = useState("Orders");
   const [filaments, setFilaments] = useState(null);
   const [models, setModels] = useState(null);
@@ -307,85 +230,62 @@ ${czech?`<div class="notice">${L.notice}</div>`:""}
   const [activeOrder, setActiveOrder] = useState(null);
   const [orderView, setOrderView] = useState("list");
   const [syncKey, setSyncKey] = useState(null);
-  const [syncStatus, setSyncStatus] = useState("idle"); // idle | syncing | ok | error
-  const timers = useRef({});
+  const [syncStatus, setSyncStatus] = useState("idle");
   const syncTimer = useRef(null);
+  const stateRef = useRef({});
   const ready = [filaments,models,extras,settings,orders].every(x => x !== null);
 
-  // Load local data + sync key on mount
   useEffect(() => {
-    (async () => {
-      const [f,m,ex,s,o,sk] = await Promise.all([
-        sLoad("fil2",[]), sLoad("mod2",[]), sLoad("ext1",[]),
-        sLoad("set2", DEFAULT_SETTINGS),
-        sLoad("ord2",[]),
-        sLoad("syncKey", null),
-      ]);
-      setFilaments(f); setModels(m); setExtras(ex);
-      setSettings({...DEFAULT_SETTINGS,...s});
-      setOrders(o);
-      setSyncKey(sk);
+    const f  = lsGet("fil2", []);
+    const m  = lsGet("mod2", []);
+    const ex = lsGet("ext1", []);
+    const s  = lsGet("set2", DEFAULT_SETTINGS);
+    const o  = lsGet("ord2", []);
+    const sk = lsGet("syncKey", null);
+    setFilaments(f); setModels(m); setExtras(ex);
+    setSettings({...DEFAULT_SETTINGS,...s});
+    setOrders(o); setSyncKey(sk);
 
-      // If we have a sync key, pull from Firestore and overwrite local
-      if (sk) {
-        setSyncStatus("syncing");
-        const remote = await fsGet(sk);
+    if (sk) {
+      setSyncStatus("syncing");
+      fsGet(sk).then(remote => {
         if (remote) {
-          if (remote.filaments) setFilaments(remote.filaments);
-          if (remote.models) setModels(remote.models);
-          if (remote.extras) setExtras(remote.extras);
-          if (remote.orders) setOrders(remote.orders);
-          if (remote.settings) setSettings({...DEFAULT_SETTINGS,...remote.settings});
-          // also persist locally
-          if (remote.filaments) sSave("fil2", remote.filaments);
-          if (remote.models) sSave("mod2", remote.models);
-          if (remote.extras) sSave("ext1", remote.extras);
-          if (remote.orders) sSave("ord2", remote.orders);
-          if (remote.settings) sSave("set2", remote.settings);
+          if (remote.filaments) { setFilaments(remote.filaments); lsSet("fil2", remote.filaments); }
+          if (remote.models)    { setModels(remote.models);       lsSet("mod2", remote.models); }
+          if (remote.extras)    { setExtras(remote.extras);       lsSet("ext1", remote.extras); }
+          if (remote.orders)    { setOrders(remote.orders);       lsSet("ord2", remote.orders); }
+          if (remote.settings)  { setSettings({...DEFAULT_SETTINGS,...remote.settings}); lsSet("set2", remote.settings); }
           setSyncStatus("ok");
-        } else {
-          setSyncStatus("error");
-        }
-      }
-    })();
+        } else { setSyncStatus("error"); }
+      });
+    }
   }, []);
 
-  // Debounced full sync to Firestore + local save
+  useEffect(() => { stateRef.current = { filaments, models, extras, orders, settings }; }, [filaments, models, extras, orders, settings]);
+
   const persistAll = useCallback((newState) => {
     clearTimeout(syncTimer.current);
     syncTimer.current = setTimeout(async () => {
-      const sk = await sLoad("syncKey", null);
-      // always save locally
-      sSave("fil2", newState.filaments);
-      sSave("mod2", newState.models);
-      sSave("ext1", newState.extras);
-      sSave("ord2", newState.orders);
-      sSave("set2", newState.settings);
+      lsSet("fil2", newState.filaments);
+      lsSet("mod2", newState.models);
+      lsSet("ext1", newState.extras);
+      lsSet("ord2", newState.orders);
+      lsSet("set2", newState.settings);
+      const sk = lsGet("syncKey", null);
       if (sk) {
         setSyncStatus("syncing");
         try {
-          await fsSet(sk, {
-            filaments: newState.filaments,
-            models: newState.models,
-            extras: newState.extras,
-            orders: newState.orders,
-            settings: newState.settings,
-          });
+          await fsSet(sk, { filaments:newState.filaments, models:newState.models, extras:newState.extras, orders:newState.orders, settings:newState.settings });
           setSyncStatus("ok");
         } catch { setSyncStatus("error"); }
       }
     }, 800);
   }, []);
 
-  // Ref to always have latest state for persistAll
-  const stateRef = useRef({});
-  useEffect(() => { stateRef.current = { filaments, models, extras, orders, settings }; }, [filaments, models, extras, orders, settings]);
-
   const mkSetter = (setter, key) => v => {
     setter(prev => {
       const n = typeof v === "function" ? v(prev) : v;
-      const next = { ...stateRef.current, [key]: n };
-      persistAll(next);
+      persistAll({ ...stateRef.current, [key]: n });
       return n;
     });
   };
@@ -402,52 +302,31 @@ ${czech?`<div class="notice">${L.notice}</div>`:""}
     setSyncStatus("syncing");
     const remote = await fsGet(k);
     if (remote && Object.keys(remote).length > 0) {
-      // Pull remote data
-      if (remote.filaments) { setFilaments(remote.filaments); sSave("fil2", remote.filaments); }
-      if (remote.models)    { setModels(remote.models);       sSave("mod2", remote.models); }
-      if (remote.extras)    { setExtras(remote.extras);       sSave("ext1", remote.extras); }
-      if (remote.orders)    { setOrders(remote.orders);       sSave("ord2", remote.orders); }
-      if (remote.settings)  { setSettings({...DEFAULT_SETTINGS,...remote.settings}); sSave("set2", remote.settings); }
+      if (remote.filaments) { setFilaments(remote.filaments); lsSet("fil2", remote.filaments); }
+      if (remote.models)    { setModels(remote.models);       lsSet("mod2", remote.models); }
+      if (remote.extras)    { setExtras(remote.extras);       lsSet("ext1", remote.extras); }
+      if (remote.orders)    { setOrders(remote.orders);       lsSet("ord2", remote.orders); }
+      if (remote.settings)  { setSettings({...DEFAULT_SETTINGS,...remote.settings}); lsSet("set2", remote.settings); }
       setSyncStatus("ok");
     } else {
-      // New key — push current data up
-      await fsSet(k, {
-        filaments: stateRef.current.filaments || [],
-        models: stateRef.current.models || [],
-        extras: stateRef.current.extras || [],
-        orders: stateRef.current.orders || [],
-        settings: stateRef.current.settings || DEFAULT_SETTINGS,
-      });
+      await fsSet(k, { filaments:stateRef.current.filaments||[], models:stateRef.current.models||[], extras:stateRef.current.extras||[], orders:stateRef.current.orders||[], settings:stateRef.current.settings||DEFAULT_SETTINGS });
       setSyncStatus("ok");
     }
-    setSyncKey(k);
-    sSave("syncKey", k);
+    setSyncKey(k); lsSet("syncKey", k);
   };
 
-  const disconnectSync = () => {
-    setSyncKey(null);
-    sSave("syncKey", null);
-    setSyncStatus("idle");
-  };
-
-  const generateNewKey = () => {
-    const k = genKey();
-    connectSync(k);
-  };
+  const disconnectSync = () => { setSyncKey(null); lsSet("syncKey", null); setSyncStatus("idle"); };
+  const generateNewKey = () => connectSync(genKey());
 
   const accent = settings?.accentColor || "#7c3aed";
+  if (!ready) return React.createElement("div", {style:{display:"flex",alignItems:"center",justifyContent:"center",height:"100vh",background:"#0f0f13",color:"#888",fontFamily:"Inter,Arial,sans-serif"}},"Loading…");
 
-  if (!ready) return <div style={{display:"flex",alignItems:"center",justifyContent:"center",height:"100vh",background:"#0f0f13",color:"#888",fontFamily:"Inter,Arial,sans-serif"}}>Loading…</div>;
-
-  const statusDot = syncKey
-    ? syncStatus === "syncing" ? "🔄"
-    : syncStatus === "ok"      ? "🟢"
-    : syncStatus === "error"   ? "🔴" : "⚪"
-    : "⚪";
+  const statusDot = syncKey ? (syncStatus==="syncing"?"🔄":syncStatus==="ok"?"🟢":"🔴") : "⚪";
 
   return (
     <div style={{fontFamily:"Inter,Arial,sans-serif",background:"#0f0f13",minHeight:"100vh",color:"#e8e8f0"}}>
-      <NavBar tab={tab} setTab={setTab} accent={accent} friendMode={settings.friendMode} toggleFriend={()=>setSett(s=>({...s,friendMode:!s.friendMode}))} syncDot={statusDot} onSyncTab={()=>setTab("Settings")}/>
+      <NavBar tab={tab} setTab={setTab} accent={accent} friendMode={settings.friendMode}
+        toggleFriend={()=>setSett(s=>({...s,friendMode:!s.friendMode}))} syncDot={statusDot} onSyncTab={()=>setTab("Settings")}/>
       <div style={{maxWidth:1100,margin:"0 auto",padding:"24px 20px"}}>
         {tab==="Filaments" && <FilamentsTab filaments={filaments} setFilaments={setFil} settings={settings} accent={accent}/>}
         {tab==="Models"    && <ModelsTab models={models} setModels={setMod} accent={accent}/>}
@@ -459,13 +338,71 @@ ${czech?`<div class="notice">${L.notice}</div>`:""}
   );
 }
 
-// ─── Settings Tab ──────────────────────────────────────────────────────────────
+// ─── NavBar ────────────────────────────────────────────────────────────────────
+function NavBar({ tab, setTab, accent, friendMode, toggleFriend, syncDot, onSyncTab }) {
+  const [menuOpen, setMenuOpen] = useState(false);
+  const [narrow, setNarrow] = useState(window.innerWidth < 640);
+  const menuRef = useRef();
+
+  useEffect(() => {
+    const handler = () => setNarrow(window.innerWidth < 640);
+    window.addEventListener("resize", handler);
+    return () => window.removeEventListener("resize", handler);
+  }, []);
+
+  useEffect(() => {
+    if (!menuOpen) return;
+    const handler = e => { if (menuRef.current && !menuRef.current.contains(e.target)) setMenuOpen(false); };
+    document.addEventListener("mousedown", handler);
+    return () => document.removeEventListener("mousedown", handler);
+  }, [menuOpen]);
+
+  return (
+    <div style={{background:"#141420",borderBottom:"1px solid #2a2a3a",padding:"0 20px",position:"sticky",top:0,zIndex:10}}>
+      <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",maxWidth:1100,margin:"0 auto"}}>
+        <div style={{display:"flex",alignItems:"center",gap:8,padding:"12px 0"}}>
+          <span style={{fontSize:20}}>🖨️</span>
+          <span style={{fontWeight:700,fontSize:16,color:accent}}>PrintCost</span>
+          <span onClick={onSyncTab} title="Sync status" style={{cursor:"pointer",fontSize:14}}>{syncDot}</span>
+        </div>
+        {narrow ? (
+          <div style={{display:"flex",gap:8,alignItems:"center"}}>
+            <button onClick={toggleFriend} style={{padding:"5px 12px",borderRadius:20,border:"none",cursor:"pointer",fontWeight:600,fontSize:11,background:friendMode?accent:"#2a2a3a",color:friendMode?"#fff":"#888"}}>{friendMode?"👥":"👤"}</button>
+            <div style={{position:"relative"}} ref={menuRef}>
+              <button onClick={()=>setMenuOpen(o=>!o)} style={{padding:"6px 12px",borderRadius:8,border:"1px solid #2a2a3a",background:"#1a1a28",color:"#ccc",cursor:"pointer",fontSize:18,lineHeight:1}}>☰</button>
+              {menuOpen && (
+                <div style={{position:"absolute",right:0,top:"calc(100% + 6px)",background:"#1a1a28",border:"1px solid #2a2a3a",borderRadius:10,overflow:"hidden",minWidth:160,boxShadow:"0 8px 24px #0008",zIndex:20}}>
+                  {TABS.map(t=>(
+                    <button key={t} onClick={()=>{setTab(t);setMenuOpen(false);}} style={{display:"block",width:"100%",textAlign:"left",padding:"10px 16px",border:"none",background:tab===t?accent:"transparent",color:tab===t?"#fff":"#ccc",fontWeight:600,fontSize:13,cursor:"pointer"}}>{t}</button>
+                  ))}
+                  <div style={{borderTop:"1px solid #2a2a3a",padding:"10px 16px"}}>
+                    <button onClick={()=>{toggleFriend();setMenuOpen(false);}} style={{background:"none",border:"none",color:"#aaa",fontWeight:600,fontSize:13,cursor:"pointer",padding:0}}>{friendMode?"👥 Friend Mode ON":"👤 Normal Mode"}</button>
+                  </div>
+                </div>
+              )}
+            </div>
+          </div>
+        ) : (
+          <>
+            <div style={{display:"flex",gap:2}}>
+              {TABS.map(t=>(
+                <button key={t} onClick={()=>setTab(t)} style={{padding:"7px 14px",borderRadius:8,border:"none",cursor:"pointer",fontWeight:600,fontSize:12,background:tab===t?accent:"transparent",color:tab===t?"#fff":"#999",transition:"all .15s"}}>{t}</button>
+              ))}
+            </div>
+            <button onClick={toggleFriend} style={{padding:"5px 14px",borderRadius:20,border:"none",cursor:"pointer",fontWeight:600,fontSize:12,background:friendMode?accent:"#2a2a3a",color:friendMode?"#fff":"#888"}}>{friendMode?"👥 Friend Mode":"👤 Normal"}</button>
+          </>
+        )}
+      </div>
+    </div>
+  );
+}
+
+// ─── Settings ──────────────────────────────────────────────────────────────────
 function SettingsTab({ settings, setSettings, filaments, setFilaments, models, setModels, extras, setExtras, orders, setOrders, accent, syncKey, syncStatus, onConnect, onDisconnect, onGenerate }) {
   const upd = (k,v) => setSettings(s=>({...s,[k]:v}));
   const fileRef = useRef();
   const [keyInput, setKeyInput] = useState("");
   const advanced = settings.invoiceMode === "advanced";
-
   const allData = { filaments, models, extras, orders, settings };
   const handleImport = d => {
     if (d.filaments) setFilaments(d.filaments);
@@ -473,14 +410,11 @@ function SettingsTab({ settings, setSettings, filaments, setFilaments, models, s
     if (d.extras) setExtras(d.extras);
     if (d.orders) setOrders(d.orders);
     if (d.settings) setSettings({...DEFAULT_SETTINGS,...d.settings});
-    alert("Data imported successfully!");
+    alert("Imported!");
   };
-
   return (
     <div style={{maxWidth:600}}>
       <SectionHeader accent={accent}>Settings</SectionHeader>
-
-      {/* App */}
       <GroupLabel>App</GroupLabel>
       <Card style={{marginBottom:16}}>
         <Row2>
@@ -499,8 +433,6 @@ function SettingsTab({ settings, setSettings, filaments, setFilaments, models, s
           <Field label="Low Stock Warning (g)"><input value={settings.lowStockGrams??""} type="number" step="10" onChange={e=>upd("lowStockGrams",parseFloat(e.target.value)||0)} style={inp}/></Field>
         </Row3>
       </Card>
-
-      {/* Invoice */}
       <GroupLabel>Invoice</GroupLabel>
       <Card style={{marginBottom:16}}>
         <div style={{display:"flex",gap:16,marginBottom:14,flexWrap:"wrap"}}>
@@ -536,8 +468,6 @@ function SettingsTab({ settings, setSettings, filaments, setFilaments, models, s
           </Row2>
         </>}
       </Card>
-
-      {/* Sync */}
       <GroupLabel>Cloud Sync (Firestore)</GroupLabel>
       <Card style={{marginBottom:16}}>
         {syncKey ? (
@@ -550,13 +480,7 @@ function SettingsTab({ settings, setSettings, filaments, setFilaments, models, s
               <label style={{fontSize:12,color:"#aaa",display:"block",marginBottom:5}}>Your sync key</label>
               <div style={{display:"flex",gap:8}}>
                 <input readOnly value={syncKey} style={{...inp,fontFamily:"monospace",fontSize:11,color:"#c084fc"}}/>
-                <Btn accent={accent} small onClick={()=>{
-                  const ta=document.createElement("textarea");
-                  ta.value=syncKey; ta.style.position="fixed"; ta.style.opacity="0";
-                  document.body.appendChild(ta); ta.focus(); ta.select();
-                  document.execCommand("copy");
-                  document.body.removeChild(ta);
-                }}>📋 Copy</Btn>
+                <Btn accent={accent} small onClick={()=>{const ta=document.createElement("textarea");ta.value=syncKey;ta.style.position="fixed";ta.style.opacity="0";document.body.appendChild(ta);ta.focus();ta.select();document.execCommand("copy");document.body.removeChild(ta);}}>📋 Copy</Btn>
               </div>
               <p style={{fontSize:11,color:"#555",margin:"6px 0 0"}}>Paste this key on another device to sync your data. Keep it private.</p>
             </div>
@@ -573,8 +497,6 @@ function SettingsTab({ settings, setSettings, filaments, setFilaments, models, s
           </>
         )}
       </Card>
-
-      {/* Data */}
       <GroupLabel>Data</GroupLabel>
       <Card>
         <div style={{display:"flex",gap:8,flexWrap:"wrap"}}>
@@ -588,39 +510,37 @@ function SettingsTab({ settings, setSettings, filaments, setFilaments, models, s
   );
 }
 
-// ─── Filaments Tab ─────────────────────────────────────────────────────────────
+// ─── Filaments ─────────────────────────────────────────────────────────────────
 const emptyFil = () => ({brand:"",type:"PLA",color:"",pricePerKg:"",stockGrams:""});
 function FilamentsTab({ filaments, setFilaments, settings, accent }) {
   const [form, setForm] = useState(emptyFil());
   const [editId, setEditId] = useState(null);
   const impRef = useRef();
   const upd = (k,v) => setForm(f=>({...f,[k]:v}));
-
   const submit = () => {
     if (!form.brand.trim()||!form.color.trim()||!form.pricePerKg) return;
-    const entry = {...form,pricePerKg:parseFloat(form.pricePerKg),stockGrams:parseFloat(form.stockGrams)||0,id:editId||uid()};
+    const entry={...form,pricePerKg:parseFloat(form.pricePerKg),stockGrams:parseFloat(form.stockGrams)||0,id:editId||uid()};
     setFilaments(fs=>editId?fs.map(x=>x.id===editId?entry:x):[...fs,entry]);
-    setForm(emptyFil()); setEditId(null);
+    setForm(emptyFil());setEditId(null);
   };
-  const startEdit = f => { setForm({...f,pricePerKg:String(f.pricePerKg),stockGrams:String(f.stockGrams)}); setEditId(f.id); };
-
+  const startEdit=f=>{setForm({...f,pricePerKg:String(f.pricePerKg),stockGrams:String(f.stockGrams)});setEditId(f.id);};
   return (
     <div>
       <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:20}}>
         <SectionHeader accent={accent}>Filament Library</SectionHeader>
         <div style={{display:"flex",gap:8}}>
-          <Btn accent={accent} small onClick={()=>exportData(filaments,"filaments.json")}>⬇ Export</Btn>
-          <Btn accent={accent} small onClick={()=>impRef.current.click()}>⬆ Import</Btn>
+          <Btn accent={accent} small onClick={()=>exportData(filaments,"filaments.json")}>⬇</Btn>
+          <Btn accent={accent} small onClick={()=>impRef.current.click()}>⬆</Btn>
           <input ref={impRef} type="file" accept=".json" style={{display:"none"}} onChange={e=>{if(e.target.files[0])importData(e.target.files[0],d=>{if(Array.isArray(d))setFilaments(d);});e.target.value="";}}/>
         </div>
       </div>
       <Card style={{marginBottom:20}}>
-        <div style={{fontSize:13,fontWeight:600,color:"#aaa",marginBottom:12}}>{editId?"Edit Filament":"Add Filament"}</div>
+        <div style={{fontSize:13,fontWeight:600,color:"#aaa",marginBottom:12}}>{editId?"Edit":"Add"} Filament</div>
         <div style={{display:"grid",gridTemplateColumns:"repeat(5,1fr)",gap:8,marginBottom:10}}>
           <input value={form.brand} onChange={e=>upd("brand",e.target.value)} placeholder="Brand" style={inp}/>
           <select value={form.type} onChange={e=>upd("type",e.target.value)} style={inp}>{TYPES.map(t=><option key={t}>{t}</option>)}</select>
           <input value={form.color} onChange={e=>upd("color",e.target.value)} placeholder="Color" style={inp}/>
-          <input value={form.pricePerKg} onChange={e=>upd("pricePerKg",e.target.value)} placeholder="Price/kg (CZK)" type="number" style={inp}/>
+          <input value={form.pricePerKg} onChange={e=>upd("pricePerKg",e.target.value)} placeholder="Price/kg" type="number" style={inp}/>
           <input value={form.stockGrams} onChange={e=>upd("stockGrams",e.target.value)} placeholder="Stock (g)" type="number" style={inp}/>
         </div>
         <div style={{display:"flex",gap:8}}>
@@ -656,7 +576,7 @@ function FilamentsTab({ filaments, setFilaments, settings, accent }) {
   );
 }
 
-// ─── Models Tab ────────────────────────────────────────────────────────────────
+// ─── Models ────────────────────────────────────────────────────────────────────
 const emptyModel = () => ({name:"",description:"",weightSlots:[{id:uid(),label:"Main",grams:""}]});
 function ModelsTab({ models, setModels, accent }) {
   const [form, setForm] = useState(emptyModel());
@@ -677,18 +597,17 @@ function ModelsTab({ models, setModels, accent }) {
       <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:20}}>
         <SectionHeader accent={accent}>Model Library</SectionHeader>
         <div style={{display:"flex",gap:8}}>
-          <Btn accent={accent} small onClick={()=>exportData(models,"models.json")}>⬇ Export</Btn>
-          <Btn accent={accent} small onClick={()=>impRef.current.click()}>⬆ Import</Btn>
+          <Btn accent={accent} small onClick={()=>exportData(models,"models.json")}>⬇</Btn>
+          <Btn accent={accent} small onClick={()=>impRef.current.click()}>⬆</Btn>
           <input ref={impRef} type="file" accept=".json" style={{display:"none"}} onChange={e=>{if(e.target.files[0])importData(e.target.files[0],d=>{if(Array.isArray(d))setModels(d);});e.target.value="";}}/>
         </div>
       </div>
       <Card style={{marginBottom:20}}>
-        <div style={{fontSize:13,fontWeight:600,color:"#aaa",marginBottom:12}}>{editId?"Edit Model":"Add Model"}</div>
+        <div style={{fontSize:13,fontWeight:600,color:"#aaa",marginBottom:12}}>{editId?"Edit":"Add"} Model</div>
         <div style={{display:"grid",gridTemplateColumns:"1fr 2fr",gap:8,marginBottom:12}}>
           <input value={form.name} onChange={e=>setForm(f=>({...f,name:e.target.value}))} placeholder="Model name" style={inp}/>
-          <input value={form.description} onChange={e=>setForm(f=>({...f,description:e.target.value}))} placeholder="Description (optional)" style={inp}/>
+          <input value={form.description} onChange={e=>setForm(f=>({...f,description:e.target.value}))} placeholder="Description" style={inp}/>
         </div>
-        <div style={{fontSize:12,color:"#aaa",marginBottom:8}}>Filament weight slots:</div>
         {form.weightSlots.map(s=>(
           <div key={s.id} style={{display:"flex",gap:8,marginBottom:8}}>
             <input value={s.label} onChange={e=>updSlot(s.id,"label",e.target.value)} placeholder="Slot name" style={{...inp,flex:1}}/>
@@ -698,7 +617,7 @@ function ModelsTab({ models, setModels, accent }) {
         ))}
         <div style={{display:"flex",gap:8,marginTop:8}}>
           <Btn accent={accent} onClick={addSlot}>+ Slot</Btn>
-          <Btn accent={accent} primary onClick={submit}>{editId?"Update":"Save Model"}</Btn>
+          <Btn accent={accent} primary onClick={submit}>{editId?"Update":"Save"}</Btn>
           {editId&&<Btn accent={accent} onClick={()=>{setForm(emptyModel());setEditId(null);}}>Cancel</Btn>}
         </div>
       </Card>
@@ -727,7 +646,7 @@ function ModelsTab({ models, setModels, accent }) {
   );
 }
 
-// ─── Extras Tab ────────────────────────────────────────────────────────────────
+// ─── Extras ────────────────────────────────────────────────────────────────────
 const emptyExtra = () => ({name:"",description:"",unitPrice:"",unit:"item"});
 function ExtrasTab({ extras, setExtras, accent }) {
   const [form, setForm] = useState(emptyExtra());
@@ -746,19 +665,18 @@ function ExtrasTab({ extras, setExtras, accent }) {
       <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:20}}>
         <SectionHeader accent={accent}>Extras &amp; Services</SectionHeader>
         <div style={{display:"flex",gap:8}}>
-          <Btn accent={accent} small onClick={()=>exportData(extras,"extras.json")}>⬇ Export</Btn>
-          <Btn accent={accent} small onClick={()=>impRef.current.click()}>⬆ Import</Btn>
+          <Btn accent={accent} small onClick={()=>exportData(extras,"extras.json")}>⬇</Btn>
+          <Btn accent={accent} small onClick={()=>impRef.current.click()}>⬆</Btn>
           <input ref={impRef} type="file" accept=".json" style={{display:"none"}} onChange={e=>{if(e.target.files[0])importData(e.target.files[0],d=>{if(Array.isArray(d))setExtras(d);});e.target.value="";}}/>
         </div>
       </div>
-      <p style={{fontSize:12,color:"#666",marginTop:-12,marginBottom:16}}>Custom line items for post-print cleaning, assembly, shipping, etc. Always visible regardless of Friend Mode.</p>
       <Card style={{marginBottom:20}}>
-        <div style={{fontSize:13,fontWeight:600,color:"#aaa",marginBottom:12}}>{editId?"Edit Extra":"Add Extra"}</div>
+        <div style={{fontSize:13,fontWeight:600,color:"#aaa",marginBottom:12}}>{editId?"Edit":"Add"} Extra</div>
         <div style={{display:"grid",gridTemplateColumns:"2fr 2fr 1fr 1fr",gap:8,marginBottom:10}}>
-          <input value={form.name} onChange={e=>upd("name",e.target.value)} placeholder="Name (e.g. Post-print cleaning)" style={inp}/>
-          <input value={form.description} onChange={e=>upd("description",e.target.value)} placeholder="Description (optional)" style={inp}/>
-          <input value={form.unitPrice} onChange={e=>upd("unitPrice",e.target.value)} placeholder="Unit price (CZK)" type="number" style={inp}/>
-          <input value={form.unit} onChange={e=>upd("unit",e.target.value)} placeholder="Unit (e.g. item, hour)" style={inp}/>
+          <input value={form.name} onChange={e=>upd("name",e.target.value)} placeholder="Name" style={inp}/>
+          <input value={form.description} onChange={e=>upd("description",e.target.value)} placeholder="Description" style={inp}/>
+          <input value={form.unitPrice} onChange={e=>upd("unitPrice",e.target.value)} placeholder="Price (CZK)" type="number" style={inp}/>
+          <input value={form.unit} onChange={e=>upd("unit",e.target.value)} placeholder="Unit" style={inp}/>
         </div>
         <div style={{display:"flex",gap:8}}>
           <Btn accent={accent} primary onClick={submit}>{editId?"Update":"Add"}</Btn>
@@ -787,7 +705,7 @@ function ExtrasTab({ extras, setExtras, accent }) {
   );
 }
 
-// ─── Orders Tab ────────────────────────────────────────────────────────────────
+// ─── Orders ────────────────────────────────────────────────────────────────────
 function OrdersTab({ orders, setOrders, filaments, setFilaments, models, extras, settings, activeOrder, setActiveOrder, orderView, setOrderView, accent, setSett }) {
   const impRef = useRef();
   const newOrder=()=>{
@@ -796,35 +714,29 @@ function OrdersTab({ orders, setOrders, filaments, setFilaments, models, extras,
   };
   const openEdit=o=>{setActiveOrder(JSON.parse(JSON.stringify(o)));setOrderView("edit");};
   const delOrder=id=>setOrders(os=>os.filter(o=>o.id!==id));
-
   const saveOrder=o=>{
     const isNew=!orders.find(x=>x.id===o.id);
     if(isNew){
       const deltas={};
-      (o.items||[]).forEach(item=>(item.filamentUses||[]).forEach(fu=>{
-        if(fu.filamentId)deltas[fu.filamentId]=(deltas[fu.filamentId]||0)+(parseFloat(fu.grams)||0);
-      }));
+      (o.items||[]).forEach(item=>(item.filamentUses||[]).forEach(fu=>{if(fu.filamentId)deltas[fu.filamentId]=(deltas[fu.filamentId]||0)+(parseFloat(fu.grams)||0);}));
       setFilaments(fs=>fs.map(f=>deltas[f.id]?{...f,stockGrams:Math.max(0,f.stockGrams-deltas[f.id])}:f));
-      // bump invoice counter
       setSett(s=>({...s,invoiceCounter:(parseInt(s.invoiceCounter)||1)+1}));
     }
     setOrders(os=>isNew?[...os,o]:os.map(x=>x.id===o.id?o:x));
     setOrderView("list");
   };
-
   if(orderView==="edit"&&activeOrder){
     return <OrderEditor order={activeOrder} setOrder={setActiveOrder} filaments={filaments} models={models} extras={extras} settings={settings} onSave={saveOrder} onCancel={()=>setOrderView("list")} accent={accent}/>;
   }
-
   return (
     <div>
       <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:20}}>
         <SectionHeader accent={accent}>Orders</SectionHeader>
         <div style={{display:"flex",gap:8}}>
-          <Btn accent={accent} small onClick={()=>exportData(orders,"orders.json")}>⬇ Export</Btn>
-          <Btn accent={accent} small onClick={()=>impRef.current.click()}>⬆ Import</Btn>
+          <Btn accent={accent} small onClick={()=>exportData(orders,"orders.json")}>⬇</Btn>
+          <Btn accent={accent} small onClick={()=>impRef.current.click()}>⬆</Btn>
           <input ref={impRef} type="file" accept=".json" style={{display:"none"}} onChange={e=>{if(e.target.files[0])importData(e.target.files[0],d=>{if(Array.isArray(d))setOrders(d);});e.target.value="";}}/>
-          <Btn accent={accent} primary onClick={newOrder}>+ New Order</Btn>
+          <Btn accent={accent} primary onClick={newOrder}>+ New</Btn>
         </div>
       </div>
       {!orders.length&&<div style={{color:"#555",fontSize:13}}>No orders yet.</div>}
@@ -837,15 +749,12 @@ function OrdersTab({ orders, setOrders, filaments, setFilaments, models, extras,
                 <div style={{fontWeight:700}}>{o.name||"Untitled Order"}</div>
                 {o.clientName&&<div style={{color:"#aaa",fontSize:12,marginTop:1}}>{o.clientName}{o.clientEmail?` · ${o.clientEmail}`:""}</div>}
                 {o.description&&<div style={{color:"#666",fontSize:12,marginTop:1}}>{o.description}</div>}
-                <div style={{fontSize:12,color:"#aaa",marginTop:4}}>{(o.items||[]).length} model(s){(o.extraLines||[]).length>0?`, ${o.extraLines.length} extra(s)`:""}</div>
+                <div style={{fontSize:12,color:"#aaa",marginTop:4}}>{(o.items||[]).length} model(s)</div>
               </div>
               <div style={{display:"flex",alignItems:"center",gap:10}}>
                 <span style={{fontWeight:700,color:"#86efac",fontSize:16,minWidth:100,textAlign:"right"}}>{fmtCZK(total,settings.czechInvoice)}</span>
                 <Btn accent={accent} small onClick={()=>openEdit(o)}>✏️</Btn>
-                <Btn accent={accent} small onClick={()=>{
-                  const invNum=String(settings.invoiceCounter||1).padStart(6,"0");
-                  exportInvoice(o,filaments,extras,settings,invNum);
-                }}>📄</Btn>
+                <Btn accent={accent} small onClick={()=>exportInvoice(o,filaments,extras,settings,String(settings.invoiceCounter||1).padStart(6,"0"))}>📄</Btn>
                 <Btn accent={accent} small onClick={()=>delOrder(o.id)}>🗑️</Btn>
               </div>
             </Card>
@@ -860,10 +769,9 @@ function OrdersTab({ orders, setOrders, filaments, setFilaments, models, extras,
 function OrderEditor({ order, setOrder, filaments, models, extras, settings, onSave, onCancel, accent }) {
   const upd=(k,v)=>setOrder(o=>({...o,[k]:v}));
   const advanced=settings.invoiceMode==="advanced";
-
   const addItem=model=>{
     const slots=model?model.weightSlots:[{id:uid(),label:"Main",grams:0}];
-    const item={id:uid(),modelId:model?.id||null,modelName:model?.name||"Custom",qty:1,
+    const item={id:uid(),modelId:model?.id||null,modelName:model?.name||"Custom",qty:1,filamentMarkup:"",
       filamentUses:slots.map(s=>({id:uid(),slotLabel:s.label,grams:s.grams,filamentId:""}))};
     setOrder(o=>({...o,items:[...(o.items||[]),item]}));
   };
@@ -882,13 +790,9 @@ function OrderEditor({ order, setOrder, filaments, models, extras, settings, onS
       r.readAsDataURL(file);
     });
   };
-
   const filTotal=(order.items||[]).reduce((sum,item)=>{
     const mult=1+(parseFloat(item.filamentMarkup)||0)/100;
-    return sum+(item.filamentUses||[]).reduce((s,fu)=>{
-      const f=filaments.find(x=>x.id===fu.filamentId);
-      return s+(f?(parseFloat(fu.grams)||0)/1000*f.pricePerKg*mult:0);
-    },0);
+    return sum+(item.filamentUses||[]).reduce((s,fu)=>{const f=filaments.find(x=>x.id===fu.filamentId);return s+(f?(parseFloat(fu.grams)||0)/1000*f.pricePerKg*mult:0);},0);
   },0);
   const ptCost=!settings.friendMode?(parseFloat(order.printMinutes)||0)*(parseFloat(settings.cppm)||0):0;
   const elCost=!settings.friendMode?(parseFloat(order.electricityMinutes)||0)*(parseFloat(settings.electricityPerMinute)||0):0;
@@ -897,28 +801,23 @@ function OrderEditor({ order, setOrder, filaments, models, extras, settings, onS
     return s+(parseFloat(el.qty)||1)*(parseFloat(el.unitPrice)||0);
   },0);
   const total=filTotal+ptCost+elCost+extraTotal;
-
   return (
     <div>
       <div style={{display:"flex",gap:10,alignItems:"center",marginBottom:20}}>
         <button onClick={onCancel} style={{...ghostBtn,fontSize:20}}>←</button>
         <h2 style={{color:accent,margin:0}}>Order Editor</h2>
       </div>
-
-      {/* Basic info */}
       <Card style={{marginBottom:14}}>
         <Row2>
           <input value={order.name} onChange={e=>upd("name",e.target.value)} placeholder="Order name" style={inp}/>
-          <input value={order.description} onChange={e=>upd("description",e.target.value)} placeholder="Description (optional)" style={inp}/>
+          <input value={order.description} onChange={e=>upd("description",e.target.value)} placeholder="Description" style={inp}/>
         </Row2>
       </Card>
-
-      {/* Client info — advanced only */}
       {advanced&&(
         <Card style={{marginBottom:14}}>
           <div style={{fontSize:13,fontWeight:600,color:"#aaa",marginBottom:10}}>Client</div>
           <Row2 style={{marginBottom:8}}>
-            <input value={order.clientName||""} onChange={e=>upd("clientName",e.target.value)} placeholder="Client name / company" style={inp}/>
+            <input value={order.clientName||""} onChange={e=>upd("clientName",e.target.value)} placeholder="Client name" style={inp}/>
             <input value={order.clientEmail||""} onChange={e=>upd("clientEmail",e.target.value)} placeholder="Client e-mail" style={inp}/>
           </Row2>
           <Row2 style={{marginBottom:8}}>
@@ -931,13 +830,11 @@ function OrderEditor({ order, setOrder, filaments, models, extras, settings, onS
           </Row2>
         </Card>
       )}
-
-      {/* Models */}
       <Card style={{marginBottom:14}}>
         <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:10,flexWrap:"wrap",gap:8}}>
-          <span style={{fontSize:13,fontWeight:600,color:"#aaa"}}>Models in Order</span>
+          <span style={{fontSize:13,fontWeight:600,color:"#aaa"}}>Models</span>
           <div style={{display:"flex",gap:6,alignItems:"center"}}>
-            <select defaultValue="" onChange={e=>{if(e.target.value){addItem(models.find(m=>m.id===e.target.value)||null);e.target.value="";}}} style={{...inp,width:"auto",fontSize:12,padding:"5px 10px"}}>
+            <select defaultValue="" onChange={e=>{if(e.target.value){addItem(models.find(m=>m.id===e.target.value)||null);e.target.value="";} }} style={{...inp,width:"auto",fontSize:12,padding:"5px 10px"}}>
               <option value="" disabled>Add from library…</option>
               {models.map(m=><option key={m.id} value={m.id}>{m.name}</option>)}
             </select>
@@ -957,20 +854,11 @@ function OrderEditor({ order, setOrder, filaments, models, extras, settings, onS
                 <div style={{display:"flex",alignItems:"center",gap:4}}>
                   <span style={{color:"#aaa",fontSize:12}}>markup</span>
                   <div style={{position:"relative",display:"flex",alignItems:"center"}}>
-                    <input
-                      value={item.filamentMarkup===undefined||item.filamentMarkup===""?"":item.filamentMarkup}
-                      type="number" min={-100} step={5}
+                    <input value={item.filamentMarkup===undefined||item.filamentMarkup===""?"":item.filamentMarkup} type="number" min={-100} step={5}
                       onChange={e=>updItem(item.id,"filamentMarkup",e.target.value===""?"":parseFloat(e.target.value))}
-                      placeholder="0"
-                      style={{...inp,width:68,padding:"4px 20px 4px 8px",fontSize:12}}
-                    />
+                      placeholder="0" style={{...inp,width:68,padding:"4px 20px 4px 8px",fontSize:12}}/>
                     <span style={{position:"absolute",right:7,fontSize:12,color:"#888",pointerEvents:"none"}}>%</span>
                   </div>
-                  {(parseFloat(item.filamentMarkup)||0)!==0 && (
-                    <span style={{fontSize:11,color:(parseFloat(item.filamentMarkup)||0)>0?"#86efac":"#f87171"}}>
-                      {(parseFloat(item.filamentMarkup)||0)>0?"+":""}{((parseFloat(item.filamentMarkup)||0)).toFixed(0)}%
-                    </span>
-                  )}
                 </div>
               </div>
               <Btn accent={accent} small onClick={()=>delItem(item.id)}>🗑️</Btn>
@@ -997,27 +885,23 @@ function OrderEditor({ order, setOrder, filaments, models, extras, settings, onS
           </div>
         ))}
       </Card>
-
-      {/* Time & electricity */}
       {!settings.friendMode&&(
         <Card style={{marginBottom:14}}>
           <div style={{fontSize:13,fontWeight:600,color:"#aaa",marginBottom:10}}>Time &amp; Electricity</div>
           <Row2>
             <div>
-              <label style={{fontSize:11,color:"#aaa",display:"block",marginBottom:4}}>Print time (minutes)</label>
+              <label style={{fontSize:11,color:"#aaa",display:"block",marginBottom:4}}>Print time (min)</label>
               <input value={order.printMinutes===""||order.printMinutes===undefined?"":order.printMinutes} type="number" onChange={e=>upd("printMinutes",e.target.value===""?"":parseFloat(e.target.value)||0)} placeholder="e.g. 120" style={inp}/>
               <div style={{fontSize:11,color:"#86efac",marginTop:4}}>{ptCost.toFixed(2)} CZK</div>
             </div>
             <div>
-              <label style={{fontSize:11,color:"#aaa",display:"block",marginBottom:4}}>Electricity (minutes)</label>
+              <label style={{fontSize:11,color:"#aaa",display:"block",marginBottom:4}}>Electricity (min)</label>
               <input value={order.electricityMinutes===""||order.electricityMinutes===undefined?"":order.electricityMinutes} type="number" onChange={e=>upd("electricityMinutes",e.target.value===""?"":parseFloat(e.target.value)||0)} placeholder="e.g. 120" style={inp}/>
               <div style={{fontSize:11,color:"#86efac",marginTop:4}}>{elCost.toFixed(2)} CZK</div>
             </div>
           </Row2>
         </Card>
       )}
-
-      {/* Extras */}
       <Card style={{marginBottom:14}}>
         <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:10,flexWrap:"wrap",gap:8}}>
           <span style={{fontSize:13,fontWeight:600,color:"#aaa"}}>Extras &amp; Services</span>
@@ -1032,12 +916,12 @@ function OrderEditor({ order, setOrder, filaments, models, extras, settings, onS
         {!(order.extraLines||[]).length&&<div style={{color:"#555",fontSize:12}}>No extras added.</div>}
         {(order.extraLines||[]).map(el=>{
           if(el.extraId){
-            const ex=extras.find(x=>x.id===el.extraId); if(!ex)return null;
+            const ex=extras.find(x=>x.id===el.extraId);if(!ex)return null;
             const cost=((parseFloat(el.qty)||1)*(parseFloat(ex.unitPrice)||0)).toFixed(2);
             return (
               <div key={el.id} style={{display:"grid",gridTemplateColumns:"1fr 100px 80px 24px",gap:8,marginBottom:8,alignItems:"center"}}>
                 <span style={{fontSize:13}}>{ex.name} <span style={{color:"#555",fontSize:11}}>({ex.unitPrice} CZK/{ex.unit||"item"})</span></span>
-                <input value={el.qty} type="number" min={1} onChange={e=>updEL(el.id,"qty",parseInt(e.target.value)||1)} placeholder="qty" style={{...inp,padding:"5px 8px",fontSize:12}}/>
+                <input value={el.qty} type="number" min={1} onChange={e=>updEL(el.id,"qty",parseInt(e.target.value)||1)} style={{...inp,padding:"5px 8px",fontSize:12}}/>
                 <span style={{color:"#86efac",fontSize:12,textAlign:"right"}}>{cost} CZK</span>
                 <button onClick={()=>delEL(el.id)} style={{...ghostBtn,fontSize:13}}>✕</button>
               </div>
@@ -1048,7 +932,7 @@ function OrderEditor({ order, setOrder, filaments, models, extras, settings, onS
               <div key={el.id} style={{display:"grid",gridTemplateColumns:"1fr 120px 90px 80px 24px",gap:8,marginBottom:8,alignItems:"center"}}>
                 <input value={el.customName||""} onChange={e=>updEL(el.id,"customName",e.target.value)} placeholder="Service name" style={{...inp,padding:"5px 8px",fontSize:12}}/>
                 <input value={el.unitPrice||""} type="number" onChange={e=>updEL(el.id,"unitPrice",e.target.value)} placeholder="Unit price" style={{...inp,padding:"5px 8px",fontSize:12}}/>
-                <input value={el.qty} type="number" min={1} onChange={e=>updEL(el.id,"qty",parseInt(e.target.value)||1)} placeholder="qty" style={{...inp,padding:"5px 8px",fontSize:12}}/>
+                <input value={el.qty} type="number" min={1} onChange={e=>updEL(el.id,"qty",parseInt(e.target.value)||1)} style={{...inp,padding:"5px 8px",fontSize:12}}/>
                 <span style={{color:"#86efac",fontSize:12,textAlign:"right"}}>{cost} CZK</span>
                 <button onClick={()=>delEL(el.id)} style={{...ghostBtn,fontSize:13}}>✕</button>
               </div>
@@ -1056,8 +940,6 @@ function OrderEditor({ order, setOrder, filaments, models, extras, settings, onS
           }
         })}
       </Card>
-
-      {/* Images */}
       <Card style={{marginBottom:14}}>
         <div style={{fontSize:13,fontWeight:600,color:"#aaa",marginBottom:10}}>Images <span style={{fontWeight:400,color:"#555"}}>(optional)</span></div>
         <label style={{...inp,display:"inline-block",cursor:"pointer",width:"auto",padding:"7px 14px"}}>
@@ -1075,8 +957,6 @@ function OrderEditor({ order, setOrder, filaments, models, extras, settings, onS
           </div>
         )}
       </Card>
-
-      {/* Totals */}
       <Card style={{marginBottom:16,background:"#12121e"}}>
         {[
           {label:"Filament",val:filTotal},
@@ -1091,84 +971,10 @@ function OrderEditor({ order, setOrder, filaments, models, extras, settings, onS
           <span>Total</span><span style={{color:"#86efac"}}>{fmtCZK(total,settings.czechInvoice)}</span>
         </div>
       </Card>
-
       <div style={{display:"flex",gap:10,flexWrap:"wrap"}}>
         <Btn accent={accent} primary onClick={()=>onSave(order)}>💾 Save Order</Btn>
-        <Btn accent={accent} onClick={()=>{
-          const invNum=String(settings.invoiceCounter||1).padStart(6,"0");
-          exportInvoice(order,filaments,extras,settings,invNum);
-        }}>📄 Export Invoice</Btn>
+        <Btn accent={accent} onClick={()=>exportInvoice(order,filaments,extras,settings,String(settings.invoiceCounter||1).padStart(6,"0"))}>📄 Export Invoice</Btn>
         <Btn accent={accent} onClick={onCancel}>Cancel</Btn>
-      </div>
-    </div>
-  );
-}
-
-// ─── NavBar ────────────────────────────────────────────────────────────────────
-function NavBar({ tab, setTab, accent, friendMode, toggleFriend, syncDot, onSyncTab }) {
-  const [menuOpen, setMenuOpen] = useState(false);
-  const [narrow, setNarrow] = useState(window.innerWidth < 640);
-  const menuRef = useRef();
-
-  useEffect(() => {
-    const obs = new ResizeObserver(entries => {
-      setNarrow(entries[0].contentRect.width < 640);
-    });
-    obs.observe(document.body);
-    return () => obs.disconnect();
-  }, []);
-
-  useEffect(() => {
-    if (!menuOpen) return;
-    const handler = e => { if (menuRef.current && !menuRef.current.contains(e.target)) setMenuOpen(false); };
-    document.addEventListener("mousedown", handler);
-    return () => document.removeEventListener("mousedown", handler);
-  }, [menuOpen]);
-
-  return (
-    <div style={{background:"#141420",borderBottom:"1px solid #2a2a3a",padding:"0 20px",position:"sticky",top:0,zIndex:10}}>
-      <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",maxWidth:1100,margin:"0 auto"}}>
-        <div style={{display:"flex",alignItems:"center",gap:8,padding:"12px 0"}}>
-          <span style={{fontSize:20}}>🖨️</span>
-          <span style={{fontWeight:700,fontSize:16,color:accent}}>PrintCost</span>
-          <span onClick={onSyncTab} title="Sync status" style={{cursor:"pointer",fontSize:14}}>{syncDot}</span>
-        </div>
-
-        {narrow ? (
-          <div style={{display:"flex",gap:8,alignItems:"center"}}>
-            <button onClick={toggleFriend} style={{padding:"5px 12px",borderRadius:20,border:"none",cursor:"pointer",fontWeight:600,fontSize:11,background:friendMode?accent:"#2a2a3a",color:friendMode?"#fff":"#888"}}>
-              {friendMode?"👥":"👤"}
-            </button>
-            <div style={{position:"relative"}} ref={menuRef}>
-              <button onClick={()=>setMenuOpen(o=>!o)} style={{padding:"6px 12px",borderRadius:8,border:"1px solid #2a2a3a",background:"#1a1a28",color:"#ccc",cursor:"pointer",fontSize:18,lineHeight:1}}>☰</button>
-              {menuOpen && (
-                <div style={{position:"absolute",right:0,top:"calc(100% + 6px)",background:"#1a1a28",border:"1px solid #2a2a3a",borderRadius:10,overflow:"hidden",minWidth:160,boxShadow:"0 8px 24px #0008",zIndex:20}}>
-                  {TABS.map(t=>(
-                    <button key={t} onClick={()=>{setTab(t);setMenuOpen(false);}} style={{display:"block",width:"100%",textAlign:"left",padding:"10px 16px",border:"none",background:tab===t?accent:"transparent",color:tab===t?"#fff":"#ccc",fontWeight:600,fontSize:13,cursor:"pointer"}}>
-                      {t}
-                    </button>
-                  ))}
-                  <div style={{borderTop:"1px solid #2a2a3a",padding:"10px 16px"}}>
-                    <button onClick={()=>{toggleFriend();setMenuOpen(false);}} style={{background:"none",border:"none",color:"#aaa",fontWeight:600,fontSize:13,cursor:"pointer",padding:0}}>
-                      {friendMode?"👥 Friend Mode ON":"👤 Normal Mode"}
-                    </button>
-                  </div>
-                </div>
-              )}
-            </div>
-          </div>
-        ) : (
-          <>
-            <div style={{display:"flex",gap:2}}>
-              {TABS.map(t=>(
-                <button key={t} onClick={()=>setTab(t)} style={{padding:"7px 14px",borderRadius:8,border:"none",cursor:"pointer",fontWeight:600,fontSize:12,background:tab===t?accent:"transparent",color:tab===t?"#fff":"#999",transition:"all .15s"}}>{t}</button>
-              ))}
-            </div>
-            <button onClick={toggleFriend} style={{padding:"5px 14px",borderRadius:20,border:"none",cursor:"pointer",fontWeight:600,fontSize:12,background:friendMode?accent:"#2a2a3a",color:friendMode?"#fff":"#888"}}>
-              {friendMode?"👥 Friend Mode":"👤 Normal"}
-            </button>
-          </>
-        )}
       </div>
     </div>
   );
@@ -1177,12 +983,11 @@ function NavBar({ tab, setTab, accent, friendMode, toggleFriend, syncDot, onSync
 // ─── Shared UI ─────────────────────────────────────────────────────────────────
 const inp = {background:"#0f0f18",border:"1px solid #2a2a3a",borderRadius:8,color:"#e8e8f0",padding:"8px 12px",fontSize:13,outline:"none",width:"100%",boxSizing:"border-box"};
 const ghostBtn = {background:"none",border:"none",color:"#666",cursor:"pointer",padding:"4px 6px",borderRadius:6};
-
 const Card=({children,style})=><div style={{background:"#141420",border:"1px solid #2a2a3a",borderRadius:12,padding:16,...style}}>{children}</div>;
 const Btn=({children,onClick,primary,small,accent="#7c3aed",style})=>(
   <button onClick={onClick} style={{padding:small?"5px 10px":"8px 18px",borderRadius:8,border:"none",cursor:"pointer",fontSize:small?12:13,fontWeight:600,whiteSpace:"nowrap",background:primary?accent:"#2a2a3a",color:primary?"#fff":"#ccc",...style}}>{children}</button>
 );
-const SectionHeader=({children,accent})=><h2 style={{color:accent,margin:"0 0 0 0"}}>{children}</h2>;
+const SectionHeader=({children,accent})=><h2 style={{color:accent,margin:"0 0 16px"}}>{children}</h2>;
 const GroupLabel=({children,style})=><div style={{fontSize:11,fontWeight:700,color:"#555",textTransform:"uppercase",letterSpacing:".06em",margin:"0 0 8px",...style}}>{children}</div>;
 const Field=({label,children})=><div><label style={{display:"block",marginBottom:5,fontSize:12,color:"#aaa"}}>{label}</label>{children}</div>;
 const Row2=({children,style})=><div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:10,...style}}>{children}</div>;
@@ -1195,3 +1000,5 @@ const Toggle=({label,checked,onChange,accent})=>(
     <span style={{fontSize:13,color:"#ccc"}}>{label}</span>
   </div>
 );
+
+ReactDOM.createRoot(document.getElementById('root')).render(React.createElement(App));
