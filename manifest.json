@@ -1,7 +1,7 @@
 {
   "name": "PrintCost",
   "short_name": "PrintCost",
-  "description": "3D Print Cost Calculator v 0.92",
+  "description": "3D Print Cost Calculator v 0.93",
   "start_url": "/printcost/",
   "scope": "/printcost/",
   "display": "standalone",
