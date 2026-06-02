@@ -43,7 +43,7 @@ const lsSet = (key, val) => { try { localStorage.setItem(key, JSON.stringify(val
 
 // ─── Helpers ───────────────────────────────────────────────────────────────────
 const uid = () => Math.random().toString(36).slice(2, 9);
-const TYPES = ["PLA","PETG","ABS","ASA","TPU","Nylon","Resin","Other"];
+const TYPES = ["PLA","PLA+","PETG","Other"];
 const TABS = ["Orders","Filaments","Models","Extras","Settings"];
 
 const DEFAULT_SETTINGS = {
@@ -54,7 +54,7 @@ const DEFAULT_SETTINGS = {
   supplierICO: "", supplierEmail: "", supplierPhone: "",
   bankAccount: "", bankIBAN: "", bankBIC: "",
   paymentDueDays: 14, invoiceCounter: 1,
-  plasticTypes: ["PLA","PLA+","PETG","ABS","ASA","TPU","Nylon","Resin","Other"],
+  plasticTypes: ["PLA","PLA+","PETG","Other"],
 };
 
 const calcOrderTotal = (order, filaments, extras, settings) => {
@@ -244,8 +244,13 @@ function App() {
     const s  = lsGet("set2", DEFAULT_SETTINGS);
     const o  = lsGet("ord2", []);
     const sk = lsGet("syncKey", null);
+    const mergeSettings = (stored) => {
+      const merged = {...DEFAULT_SETTINGS, ...stored};
+      merged.plasticTypes = [...new Set([...DEFAULT_SETTINGS.plasticTypes, ...(stored.plasticTypes||[])])];
+      return merged;
+    };
     setFilaments(f); setModels(m); setExtras(ex);
-    setSettings({...DEFAULT_SETTINGS,...s});
+    setSettings(mergeSettings(s));
     setOrders(o); setSyncKey(sk);
 
     if (sk) {
@@ -256,7 +261,7 @@ function App() {
           if (remote.models)    { setModels(remote.models);       lsSet("mod2", remote.models); }
           if (remote.extras)    { setExtras(remote.extras);       lsSet("ext1", remote.extras); }
           if (remote.orders)    { setOrders(remote.orders);       lsSet("ord2", remote.orders); }
-          if (remote.settings)  { setSettings({...DEFAULT_SETTINGS,...remote.settings}); lsSet("set2", remote.settings); }
+          if (remote.settings)  { setSettings(mergeSettings(remote.settings)); lsSet("set2", remote.settings); }
           setSyncStatus("ok");
         } else { setSyncStatus("error"); }
       });
@@ -916,12 +921,12 @@ function OrderEditor({ order, setOrder, filaments, models, extras, settings, onS
       {!settings.friendMode&&(
         <Card style={{marginBottom:14}}>
           <div style={{fontSize:13,fontWeight:600,color:"#aaa",marginBottom:10}}>Time &amp; Electricity</div>
+          <div style={{display:"flex",gap:6,alignItems:"center",marginBottom:10}}>
+            <input value={printHoursInput} type="number" step="0.1" onChange={e=>setPrintHoursInput(e.target.value)} onBlur={applyPrintHours} onKeyDown={e=>e.key==="Enter"&&applyPrintHours()} placeholder="Print hours (e.g. 2.5)" style={{...inp,width:160,padding:"5px 8px",fontSize:12}}/>
+            <span style={{fontSize:11,color:"#555"}}>→ fills minutes below</span>
+          </div>
           <Row2>
             <div>
-              <div style={{display:"flex",gap:6,alignItems:"center",marginBottom:6}}>
-                <input value={printHoursInput} type="number" step="0.1" onChange={e=>setPrintHoursInput(e.target.value)} onBlur={applyPrintHours} onKeyDown={e=>e.key==="Enter"&&applyPrintHours()} placeholder="h (e.g. 2.5)" style={{...inp,width:110,padding:"5px 8px",fontSize:12}}/>
-                <span style={{fontSize:11,color:"#555"}}>→ min</span>
-              </div>
               <label style={{fontSize:11,color:"#aaa",display:"block",marginBottom:4}}>Print time (min)</label>
               <input value={order.printMinutes===""||order.printMinutes===undefined?"":order.printMinutes} type="number" onChange={e=>upd("printMinutes",e.target.value===""?"":parseFloat(e.target.value)||0)} placeholder="e.g. 120" style={inp}/>
               <div style={{fontSize:11,color:"#86efac",marginTop:4}}>{ptCost.toFixed(2)} CZK</div>
