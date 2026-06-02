@@ -131,7 +131,7 @@ const exportInvoice = (order, filaments, extras, settings, invoiceNumber) => {
       const fil=filaments.find(x=>x.id===fu.filamentId); if(!fil)return;
       const base=(parseFloat(fu.grams)||0)/1000*fil.pricePerKg;
       const cost=base*mult*qty; filTotal+=cost;
-      filRows+=`<tr><td>${fil.type}${qty>1?` ×${qty}`:""}</td><td>${fil.color}</td><td>${(parseFloat(fu.grams)||0)*qty}g</td><td class="r">${f(cost)}</td></tr>`;
+      filRows+=`<tr><td>${fil.type}</td><td>${fil.color}</td><td>${(parseFloat(fu.grams)||0)*qty}g</td><td class="r">${f(cost)}</td></tr>`;
     });
   });
   let otherRows="",otherTotal=0;
