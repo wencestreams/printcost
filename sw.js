@@ -1,4 +1,4 @@
-const CACHE = "printcost-v1.0";
+const CACHE = "printcost-v1.01";
 const ASSETS = [
   "/printcost/",
   "/printcost/index.html",
