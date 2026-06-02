@@ -54,16 +54,17 @@ const DEFAULT_SETTINGS = {
   supplierICO: "", supplierEmail: "", supplierPhone: "",
   bankAccount: "", bankIBAN: "", bankBIC: "",
   paymentDueDays: 14, invoiceCounter: 1,
-  plasticTypes: ["PLA","PETG","ABS","ASA","TPU","Nylon","Resin","Other"],
+  plasticTypes: ["PLA","PLA+","PETG","ABS","ASA","TPU","Nylon","Resin","Other"],
 };
 
 const calcOrderTotal = (order, filaments, extras, settings) => {
   let t = 0;
   (order.items||[]).forEach(item => {
     const mult = 1 + (parseFloat(item.filamentMarkup)||0) / 100;
+    const qty = parseFloat(item.qty)||1;
     (item.filamentUses||[]).forEach(fu => {
       const f = filaments.find(x => x.id === fu.filamentId);
-      if (f) t += (parseFloat(fu.grams)||0) / 1000 * f.pricePerKg * mult;
+      if (f) t += (parseFloat(fu.grams)||0) / 1000 * f.pricePerKg * mult * qty;
     });
   });
   if (!settings.friendMode) {
@@ -125,11 +126,12 @@ const exportInvoice = (order, filaments, extras, settings, invoiceNumber) => {
   let filRows="",filTotal=0;
   (order.items||[]).forEach(item => {
     const mult=1+(parseFloat(item.filamentMarkup)||0)/100;
+    const qty=parseFloat(item.qty)||1;
     (item.filamentUses||[]).forEach(fu => {
       const fil=filaments.find(x=>x.id===fu.filamentId); if(!fil)return;
       const base=(parseFloat(fu.grams)||0)/1000*fil.pricePerKg;
-      const cost=base*mult; filTotal+=cost;
-      filRows+=`<tr><td>${fil.type}</td><td>${fil.color}</td><td>${fu.grams}g</td><td class="r">${f(cost)}</td></tr>`;
+      const cost=base*mult*qty; filTotal+=cost;
+      filRows+=`<tr><td>${fil.type}${qty>1?` ×${qty}`:""}</td><td>${fil.color}</td><td>${(parseFloat(fu.grams)||0)*qty}g</td><td class="r">${f(cost)}</td></tr>`;
     });
   });
   let otherRows="",otherTotal=0;
@@ -786,6 +788,12 @@ function OrdersTab({ orders, setOrders, filaments, setFilaments, models, extras,
 // ─── Order Editor ──────────────────────────────────────────────────────────────
 function OrderEditor({ order, setOrder, filaments, models, extras, settings, onSave, onCancel, accent }) {
   const upd=(k,v)=>setOrder(o=>({...o,[k]:v}));
+  const [printHoursInput, setPrintHoursInput] = useState("");
+  const applyPrintHours = () => {
+    const h = parseFloat(printHoursInput);
+    if (!isNaN(h) && h > 0) upd("printMinutes", Math.round(h * 60));
+    setPrintHoursInput("");
+  };
   const advanced=settings.invoiceMode==="advanced";
   const addItem=model=>{
     const slots=model?model.weightSlots:[{id:uid(),label:"Main",grams:0}];
@@ -810,7 +818,8 @@ function OrderEditor({ order, setOrder, filaments, models, extras, settings, onS
   };
   const filTotal=(order.items||[]).reduce((sum,item)=>{
     const mult=1+(parseFloat(item.filamentMarkup)||0)/100;
-    return sum+(item.filamentUses||[]).reduce((s,fu)=>{const f=filaments.find(x=>x.id===fu.filamentId);return s+(f?(parseFloat(fu.grams)||0)/1000*f.pricePerKg*mult:0);},0);
+    const qty=parseFloat(item.qty)||1;
+    return sum+(item.filamentUses||[]).reduce((s,fu)=>{const f=filaments.find(x=>x.id===fu.filamentId);return s+(f?(parseFloat(fu.grams)||0)/1000*f.pricePerKg*mult*qty:0);},0);
   },0);
   const ptCost=!settings.friendMode?(parseFloat(order.printMinutes)||0)*(parseFloat(settings.cppm)||0):0;
   const elCost=!settings.friendMode?(parseFloat(order.electricityMinutes)||0)*(parseFloat(settings.electricityPerMinute)||0):0;
@@ -884,8 +893,9 @@ function OrderEditor({ order, setOrder, filaments, models, extras, settings, onS
             {(item.filamentUses||[]).map(fu=>{
               const fil=filaments.find(f=>f.id===fu.filamentId);
               const mult=1+(parseFloat(item.filamentMarkup)||0)/100;
+              const qty=parseFloat(item.qty)||1;
               const base=fil?(parseFloat(fu.grams)||0)/1000*fil.pricePerKg:0;
-              const cost=fil?(base*mult).toFixed(2):"—";
+              const cost=fil?(base*mult*qty).toFixed(2):"—";
               return (
                 <div key={fu.id} style={{display:"grid",gridTemplateColumns:"110px 1fr 90px 72px 24px",gap:6,marginBottom:6,alignItems:"center"}}>
                   <input value={fu.slotLabel} onChange={e=>updFU(item.id,fu.id,"slotLabel",e.target.value)} placeholder="Slot" style={{...inp,fontSize:12,padding:"5px 8px"}}/>
@@ -908,10 +918,13 @@ function OrderEditor({ order, setOrder, filaments, models, extras, settings, onS
           <div style={{fontSize:13,fontWeight:600,color:"#aaa",marginBottom:10}}>Time &amp; Electricity</div>
           <Row2>
             <div>
-              <label style={{fontSize:11,color:"#aaa",display:"block",marginBottom:4}}>Print time (hours)</label>
-              <input value={order.printMinutes===""||order.printMinutes===undefined?"":Math.round((parseFloat(order.printMinutes)||0)/60*100)/100} type="number" step="0.1" onChange={e=>upd("printMinutes",e.target.value===""?"":Math.round(parseFloat(e.target.value)*60)||0)} placeholder="e.g. 2.5" style={inp}/>
-              <div style={{fontSize:11,color:"#aaa",marginTop:2}}>{order.printMinutes||0} min</div>
-              <div style={{fontSize:11,color:"#86efac",marginTop:2}}>{ptCost.toFixed(2)} CZK</div>
+              <div style={{display:"flex",gap:6,alignItems:"center",marginBottom:6}}>
+                <input value={printHoursInput} type="number" step="0.1" onChange={e=>setPrintHoursInput(e.target.value)} onBlur={applyPrintHours} onKeyDown={e=>e.key==="Enter"&&applyPrintHours()} placeholder="h (e.g. 2.5)" style={{...inp,width:110,padding:"5px 8px",fontSize:12}}/>
+                <span style={{fontSize:11,color:"#555"}}>→ min</span>
+              </div>
+              <label style={{fontSize:11,color:"#aaa",display:"block",marginBottom:4}}>Print time (min)</label>
+              <input value={order.printMinutes===""||order.printMinutes===undefined?"":order.printMinutes} type="number" onChange={e=>upd("printMinutes",e.target.value===""?"":parseFloat(e.target.value)||0)} placeholder="e.g. 120" style={inp}/>
+              <div style={{fontSize:11,color:"#86efac",marginTop:4}}>{ptCost.toFixed(2)} CZK</div>
             </div>
             <div>
               <label style={{fontSize:11,color:"#aaa",display:"block",marginBottom:4}}>Electricity (min)</label>
